@@ -46,6 +46,7 @@ class AnomalyMetricCheck(MetricCheck):
         self.cloud_check_type = "anomalyDetection"
 
     def evaluate(self, metrics: dict[str, Metric], historic_values: dict[str, object]):
+        metric_value = self.get_metric_value()
         if self.skip_anomaly_check:
             self.logs.error(
                 "Anomaly detection was not given a threshold. You might want to check if the parser returned errors"
