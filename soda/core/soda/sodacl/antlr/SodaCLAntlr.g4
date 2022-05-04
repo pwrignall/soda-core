@@ -140,6 +140,7 @@ section_header
  | column_configurations_header
  | table_filter_header
  | checks_for_each_table_header
+ | checks_for_each_group_header
  | checks_for_each_column_header
  ;
 
@@ -161,6 +162,14 @@ column_configurations_header
 
 checks_for_each_table_header
  : 'for each table' S identifier EOF
+ ;
+
+checks_for_each_group_header
+ : 'checks for each group' S group S 'in' S identifier (S partition_name)? EOF
+ ;
+
+group
+ : ROUND_LEFT identifier (COMMA S? identifier)* ROUND_RIGHT
  ;
 
 checks_for_each_column_header

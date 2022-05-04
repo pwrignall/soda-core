@@ -114,6 +114,12 @@ class SodaCLParser(Parser):
                                 header_str,
                                 header_content,
                             )
+                        elif antlr_section_header.checks_for_each_group_header():
+                            self.__parse_antlr_checks_for_each_group_section(
+                                antlr_section_header.checks_for_each_group_header(),
+                                header_str,
+                                header_content,
+                            )
                         elif antlr_section_header.checks_for_each_column_header():
                             self.__parse_antlr_checks_for_each_column_section(
                                 antlr_section_header.checks_for_each_column_header(),
@@ -134,7 +140,7 @@ class SodaCLParser(Parser):
             finally:
                 self._pop_path_element()
 
-    def __parse_table_checks_section(self, antlr_table_checks_header, header_str, header_content):
+    def __parse_table_checks_section(self, antlr_table_checks_header, header_str, header_content, for_each_group_cfg: ForEachGroupCfg = None):
         if isinstance(header_content, list):
             table_name = self.__antlr_parse_identifier_name_from_header(antlr_table_checks_header)
             if table_name is None:
