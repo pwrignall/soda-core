@@ -5,6 +5,11 @@ from tests.helpers.common_test_tables import customers_profiling
 from tests.helpers.scanner import Scanner
 
 
+def return_table_name(scanner: Scanner, customers_profiling):
+    customer_profiling_table_name = scanner.ensure_test_table(customers_profiling)
+    return customer_profiling_table_name
+
+
 @pytest.mark.parametrize(
     "table_name, soda_cl_str, cloud_dict_expectation",
     [
@@ -222,6 +227,33 @@ def test_profile_columns_text(scanner: Scanner, table_name, soda_cl_str, cloud_d
     profiling_result = remove_datasource_and_table_name(profiling_result)
 
     assert profiling_result["profiling"] == cloud_dict_expectation["profiling"]
+
+
+@pytest.mark.parametrize(
+    "table_name, soda_cl_str, expectation",
+    [
+        pytest.param(
+            customers_profiling,
+            """
+                profile columns:
+                    columns:
+                        - include {table_name}.country
+                        - include {table_name}.%
+                        - exclude %.size
+            """,
+            "",
+        )
+    ],
+)
+def test_profile_columns_inclusions_exclusions(scanner: Scanner, table_name, soda_cl_str, expectation):
+    table_name = scanner.ensure_test_table(table_name)
+    scan = scanner.create_test_scan()
+    mock_soda_cloud = scan.activate_mock_soda_cloud()
+    scan.add_sodacl_yaml_str(soda_cl_str.format(table_name=table_name))
+    scan.execute()
+    profiling_result = mock_soda_cloud.scan_result
+
+    assert True is False
 
 
 def remove_datasource_and_table_name(results_dict: dict) -> dict:
