@@ -239,7 +239,7 @@ def test_profile_columns_text(scanner: Scanner, table_name, soda_cl_str, cloud_d
                     columns:
                         - include SODATEST_CaseSensitive_5fd7051f.%
                         - include %.size
-                        - exclude {table_name}.size
+                        - exclude SODATEST_CaseSensitive_5fd7051f.size
                         - exclude %.country
                         - exclude %.id
             """,

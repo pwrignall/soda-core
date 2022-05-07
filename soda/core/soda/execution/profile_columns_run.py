@@ -100,7 +100,7 @@ class ProfileColumnsRun:
         table_name: str,
         included_columns: dict[str, list[str]],
         excluded_columns: dict[str, list[str]],
-    ) -> list[str]:
+    ) -> tuple[list[str], list[str]]:
         included_all_tables = included_columns.pop("%", [])
         excluded_all_tables = excluded_columns.pop("%", [])
         table_name = table_name.lower()
@@ -108,14 +108,11 @@ class ProfileColumnsRun:
         qualified_included_table_columns = included_columns.get(table_name, [])
         # get the list of columns for that fully qualified entry out
         qualified_included_table_columns.extend(included_all_tables)
+        # do the same for excludes
         qualified_excluded_table_columns = excluded_columns.get(table_name, [])
         qualified_excluded_table_columns.extend(excluded_all_tables)
-        qualified_included_table_columns = set(qualified_included_table_columns)
-        qualified_excluded_table_columns = set(qualified_excluded_table_columns)
 
-        qualified_included_table_columns.difference_update(qualified_excluded_table_columns)
-        # append columns from the included_all_table columns
-        # do something similar for exclude which removes from the list.
+        return qualified_included_table_columns, qualified_excluded_table_columns
 
     def _is_column_included_for_profiling(
         self,
