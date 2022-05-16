@@ -209,7 +209,7 @@ class SodaCloud:
             response = self._http_post(url=f"{self.api_url}/{request_type}", headers=self.headers, json=request_body)
             response_json = response.json()
             if response.status_code == 401 and not is_retry:
-                logger.debug(f"Authentication failed. Probably token expired. Re-authenticating...")
+                self.logs.debug(f"Authentication failed. Probably token expired. Re-authenticating...")
                 self.token = None
                 response_json = self._execute_request(request_type, request_body, True)
             elif response.status_code != 200:
@@ -228,7 +228,6 @@ class SodaCloud:
         if not self.token:
             login_command = {"type": "login"}
             if self.api_key_id and self.api_key_secret:
-                logger.debug("> /api/command (login with API key credentials)")
                 login_command["apiKeyId"] = self.api_key_id
                 login_command["apiKeySecret"] = self.api_key_secret
             else:
@@ -243,7 +242,6 @@ class SodaCloud:
 
             self.token = login_response_json.get("token")
             assert self.token, "No token in login response?!"
-            logger.debug("< 200 (login ok, token received)")
         return self.token
 
     def _http_post(self, **kwargs) -> Response:
