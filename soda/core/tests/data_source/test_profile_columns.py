@@ -293,6 +293,37 @@ def test_profile_columns_all_tables_all_columns(scanner: Scanner):
     assert len(profiling_result["profiling"]) >= 5
 
 
+@pytest.mark.parametrize(
+    "table_name, soda_cl_str, expectation",
+    [
+        pytest.param(
+            customers_profiling,
+            """
+                profile columns:
+                    columns:
+                        - include SODATEST_CaseSensitive_5fd7051f.%
+                        - include %.size
+                        - exclude SODATEST_CaseSensitive_5fd7051f.size
+                        - exclude %.country
+                        - exclude %.id
+            """,
+            "",
+        )
+    ],
+)
+def test_profile_columns_inclusions_exclusions(
+    scanner: Scanner, table_name, soda_cl_str, expectation
+):
+    table_name = scanner.ensure_test_table(table_name)
+    scan = scanner.create_test_scan()
+    mock_soda_cloud = scan.enable_mock_soda_cloud()
+    scan.add_sodacl_yaml_str(soda_cl_str.format(table_name=table_name))
+    scan.execute()
+    profiling_result = mock_soda_cloud.pop_scan_result()
+
+    assert True is False
+
+
 def remove_datasource_and_table_name(results_dict: dict) -> dict:
     for i, _ in enumerate(results_dict["profiling"]):
         del results_dict["profiling"][i]["dataSource"]
