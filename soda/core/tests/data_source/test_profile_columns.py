@@ -311,13 +311,11 @@ def test_profile_columns_all_tables_all_columns(scanner: Scanner):
         )
     ],
 )
-def test_profile_columns_inclusions_exclusions(
-    scanner: Scanner, table_name, soda_cl_str, expectation
-):
+def test_profile_columns_inclusions_exclusions(scanner: Scanner, table_name, soda_cl_str, expectation):
     table_name = scanner.ensure_test_table(table_name)
     scan = scanner.create_test_scan()
     mock_soda_cloud = scan.enable_mock_soda_cloud()
-    scan.add_sodacl_yaml_str(soda_cl_str.format(table_name=table_name))
+    scan.add_sodacl_yaml_str(soda_cl_str)
     scan.execute()
     profiling_result = mock_soda_cloud.pop_scan_result()
 
