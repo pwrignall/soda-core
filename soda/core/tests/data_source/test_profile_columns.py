@@ -301,24 +301,55 @@ def test_profile_columns_all_tables_all_columns(scanner: Scanner):
             """
                 profile columns:
                     columns:
-                        - include SODATEST_CaseSensitive_5fd7051f.%
+                        - include {table_name}.%
                         - include %.size
-                        - exclude SODATEST_CaseSensitive_5fd7051f.size
                         - exclude %.country
                         - exclude %.id
             """,
             "",
-        )
+        ),
+        pytest.param(
+            customers_profiling,
+            """
+                profile columns:
+                    columns:
+                        - include %.%
+                        - exclude %.id
+            """,
+            "all but id",
+            id="all tables and cols except for id",
+        ),
+        pytest.param(
+            customers_profiling,
+            """
+                profile columns:
+                    columns:
+                        - include %.%
+                        - exclude %.%
+            """,
+            "all but id",
+            id="all tables and columns included and then all excluded",
+        ),
     ],
 )
 def test_profile_columns_inclusions_exclusions(scanner: Scanner, table_name, soda_cl_str, expectation):
-    table_name = scanner.ensure_test_table(customers_profiling)
+    _table_name = scanner.ensure_test_table(table_name)
     scan = scanner.create_test_scan()
     mock_soda_cloud = scan.enable_mock_soda_cloud()
-    scan.add_sodacl_yaml_str(soda_cl_str)
-    scan.execute()
+    scan.add_sodacl_yaml_str(soda_cl_str.format(table_name=_table_name))
+    scan.execute(allow_error_warning=True)
     profiling_result = mock_soda_cloud.pop_scan_result()
-    assert True is False
+    for table_result in profiling_result["profiling"]:
+        if table_result["table"].lower().startswith("sodatest_customer"):
+            column_names = [col_profile["columnName"] for col_profile in table_result["columnProfiles"]]
+            if expectation == "all but id":
+                assert "id" not in column_names
+            elif expectation == "all but nothing":
+                assert len(column_names) == 0
+            else:
+                assert "id" not in column_names
+                assert "size" in column_names
+                assert "country" not in column_names
 
 
 def remove_datasource_and_table_name(results_dict: dict) -> dict:

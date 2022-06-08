@@ -50,7 +50,7 @@ class ProfileColumnsRun:
         # row_counts is a dict that maps table names to row counts.
         row_counts_by_table_name: dict[str, int] = self.data_source.get_row_counts_all_tables(
             include_tables=self._get_table_expression(self.profile_columns_cfg.include_columns),
-            exclude_tables=self._get_table_expression(self.profile_columns_cfg.exclude_columns),
+            exclude_tables=self._get_table_expression(self.profile_columns_cfg.exclude_columns, is_for_exclusion=True),
             query_name="profile columns: get tables and row counts",
         )
         parsed_included_tables_and_columns = self._build_column_expression_list(
@@ -65,7 +65,7 @@ class ProfileColumnsRun:
             profile_columns_result_table = profile_columns_result.create_table(
                 table_name, self.data_source.data_source_name, measured_row_count
             )
-
+            self.logs.debug(f"{table_name=}")
             included_columns, excluded_columns = self.build_column_inclusion_exclusion_lists(
                 table_name, parsed_included_tables_and_columns, parsed_excluded_tables_and_columns
             )
@@ -345,6 +345,8 @@ class ProfileColumnsRun:
         self, candidate_column_name: str, included_columns: list[str], excluded_columns: list[str]
     ) -> bool:
         if "%" in included_columns and "%" not in excluded_columns:
+            if candidate_column_name in excluded_columns:
+                return False
             return True
         if candidate_column_name in included_columns and candidate_column_name not in excluded_columns:
             return True
@@ -378,15 +380,17 @@ class ProfileColumnsRun:
         included_columns: dict[str, list[str]],
         excluded_columns: dict[str, list[str]],
     ) -> tuple[list[str], list[str]]:
-        included_all_tables = included_columns.pop("%", [])
-        excluded_all_tables = excluded_columns.pop("%", [])
+        _included_columns = included_columns.copy()
+        _excluded_columns = excluded_columns.copy()
+        included_all_tables = _included_columns.pop("%", [])
+        excluded_all_tables = _excluded_columns.pop("%", [])
         table_name = table_name.lower()
         # get the table entry that matches the current table name (also think about potential regex matching)
-        qualified_included_table_columns = included_columns.get(table_name, [])
+        qualified_included_table_columns = _included_columns.get(table_name, [])
         # get the list of columns for that fully qualified entry out
         qualified_included_table_columns.extend(included_all_tables)
         # do the same for excludes
-        qualified_excluded_table_columns = excluded_columns.get(table_name, [])
+        qualified_excluded_table_columns = _excluded_columns.get(table_name, [])
         qualified_excluded_table_columns.extend(excluded_all_tables)
 
         return qualified_included_table_columns, qualified_excluded_table_columns
@@ -404,7 +408,6 @@ class ProfileColumnsRun:
                     included_columns[table].append(column)
             else:
                 included_columns.update({table: [column]})
-
         return included_columns
 
     # TODO: Deal with exclude set as well
@@ -422,7 +425,7 @@ class ProfileColumnsRun:
                 included_columns.update({table: [column]})
         return included_columns
 
-    def _get_table_expression(self, columns_expression: list[str]) -> list[str]:
+    def _get_table_expression(self, columns_expression: list[str], is_for_exclusion: bool = False) -> list[str]:
         table_expressions = []
         for column_expression in columns_expression:
             parts = column_expression.split(".")
@@ -432,8 +435,12 @@ class ProfileColumnsRun:
                     location=self.profile_columns_cfg.location,
                 )
             else:
-                table_expression = parts[0]
-                table_expressions.append(table_expression)
+                if is_for_exclusion:
+                    table_expression = parts[0] if parts[1] == "%" else None
+                else:
+                    table_expression = parts[0]
+                if table_expression is not None:
+                    table_expressions.append(table_expression)
         return table_expressions
 
     def _get_colums(self, columns_expression: list[str]) -> list[str]:
