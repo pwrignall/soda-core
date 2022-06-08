@@ -127,7 +127,6 @@ class ProfileColumnsRun:
         columns_metadata_result: dict,
         included_columns: list[str],
         excluded_columns: list[str],
-        # parsed_tables_and_columns: dict[str, list[str]],
         profile_columns_result_table: ProfileColumnsResultTable,
     ):
         self.logs.debug(f"Profiling column {column_name} of {table_name}")
@@ -248,7 +247,6 @@ class ProfileColumnsRun:
         columns_metadata_result: dict,
         included_columns: list[str],
         excluded_columns: list[str],
-        # parsed_tables_and_columns: dict[str, list[str]],
         profile_columns_result_table: ProfileColumnsResultTable,
     ):
         profile_columns_result_column, is_included_column = self.build_profiling_column(
@@ -322,12 +320,11 @@ class ProfileColumnsRun:
         table_columns: list[str],
         included_columns: list[str],
         excluded_columns: list[str],
-        # parsed_tables_and_columns: dict[str, list[str]],
         table_result: ProfileColumnsResultTable,
     ) -> tuple[ProfileColumnsResultColumn | None, bool]:
         column_name = column_name.lower()
-        will_be = self._column_should_be_profiled(column_name, included_columns, excluded_columns)
-        if will_be:
+        column_will_be_profiled = self._column_should_be_profiled(column_name, included_columns, excluded_columns)
+        if column_will_be_profiled:
             profile_columns_result_column: ProfileColumnsResultColumn = table_result.create_column(
                 column_name, column_type
             )
@@ -395,23 +392,7 @@ class ProfileColumnsRun:
 
         return qualified_included_table_columns, qualified_excluded_table_columns
 
-    # TODO: Deal with exclude set as well
     def _build_column_expression_list(self, columns_expression: list[str]) -> dict[str, list[str]]:
-        included_columns = {}
-        for col_expression in columns_expression:
-            table, column = col_expression.split(".")
-            table = table.lower()
-            if table in included_columns.keys():
-                if included_columns[table] is None:
-                    included_columns[table] = [column]
-                else:
-                    included_columns[table].append(column)
-            else:
-                included_columns.update({table: [column]})
-        return included_columns
-
-    # TODO: Deal with exclude set as well
-    def _build_column_inclusion(self, columns_expression: list[str]) -> dict[str, list[str]]:
         included_columns = {}
         for col_expression in columns_expression:
             table, column = col_expression.split(".")
