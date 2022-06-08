@@ -334,6 +334,19 @@ def test_profile_columns_all_tables_all_columns(scanner: Scanner):
             "all but id",
             id="all tables and columns included and then all excluded",
         ),
+        pytest.param(
+            customers_profiling,
+            """
+                profile columns:
+                    columns:
+                        - include {table_name}.%
+                        - include %.si%
+                        - exclude %.country
+                        - exclude %.id
+            """,
+            "",
+            id="all tables with 'si' like columns should have profile",
+        ),
     ],
 )
 def test_profile_columns_inclusions_exclusions(scanner: Scanner, table_name, soda_cl_str, expectation):

@@ -71,49 +71,52 @@ class ProfileColumnsRun:
             )
 
             # get columns & metadata for current table
-            columns_metadata_sql = self.data_source.sql_to_get_column_metadata_for_table(table_name)
+            columns_metadata_sql = self.data_source.sql_to_get_column_metadata_for_table(
+                table_name, included_columns, excluded_columns
+            )
             columns_metadata_query = Query(
                 data_source_scan=self.data_source_scan,
                 unqualified_query_name=f"get col metadata for table: {table_name}",
                 sql=columns_metadata_sql,
             )
             columns_metadata_query.execute()
-            assert columns_metadata_query.rows, f"No metadata was captured for table: {table_name}"
-            columns_metadata_result = {column[0]: column[1] for column in columns_metadata_query.rows}
-            # perform numerical metrics collection
-            numerical_columns = {
-                col_name: data_type
-                for col_name, data_type in columns_metadata_result.items()
-                if data_type in self.data_source.NUMERIC_TYPES_FOR_PROFILING
-            }
+            if len(columns_metadata_query.rows) > 0:
+                # assert columns_metadata_query.rows, f"No metadata was captured for table: {table_name}"
+                columns_metadata_result = {column[0]: column[1] for column in columns_metadata_query.rows}
+                # perform numerical metrics collection
+                numerical_columns = {
+                    col_name: data_type
+                    for col_name, data_type in columns_metadata_result.items()
+                    if data_type in self.data_source.NUMERIC_TYPES_FOR_PROFILING
+                }
 
-            for column_name, column_type in numerical_columns.items():
-                self.profile_numeric_column(
-                    column_name,
-                    column_type,
-                    table_name,
-                    columns_metadata_result,
-                    included_columns,
-                    excluded_columns,
-                    profile_columns_result_table,
-                )
+                for column_name, column_type in numerical_columns.items():
+                    self.profile_numeric_column(
+                        column_name,
+                        column_type,
+                        table_name,
+                        columns_metadata_result,
+                        included_columns,
+                        excluded_columns,
+                        profile_columns_result_table,
+                    )
 
-            # text columns
-            text_columns = {
-                col_name: data_type
-                for col_name, data_type in columns_metadata_result.items()
-                if data_type in self.data_source.TEXT_TYPES_FOR_PROFILING
-            }
-            for column_name, column_type in text_columns.items():
-                self.profile_text_column(
-                    column_name,
-                    column_type,
-                    table_name,
-                    columns_metadata_result,
-                    included_columns,
-                    excluded_columns,
-                    profile_columns_result_table,
-                )
+                # text columns
+                text_columns = {
+                    col_name: data_type
+                    for col_name, data_type in columns_metadata_result.items()
+                    if data_type in self.data_source.TEXT_TYPES_FOR_PROFILING
+                }
+                for column_name, column_type in text_columns.items():
+                    self.profile_text_column(
+                        column_name,
+                        column_type,
+                        table_name,
+                        columns_metadata_result,
+                        included_columns,
+                        excluded_columns,
+                        profile_columns_result_table,
+                    )
 
         if not profile_columns_result.tables:
             self.logs.error(f"Profiling for data source: {self.data_source.data_source_name} failed")
@@ -323,13 +326,11 @@ class ProfileColumnsRun:
         table_result: ProfileColumnsResultTable,
     ) -> tuple[ProfileColumnsResultColumn | None, bool]:
         column_name = column_name.lower()
-        column_will_be_profiled = self._column_should_be_profiled(column_name, included_columns, excluded_columns)
-        if column_will_be_profiled:
-            profile_columns_result_column: ProfileColumnsResultColumn = table_result.create_column(
-                column_name, column_type
-            )
-            return profile_columns_result_column, True
-        return None, False
+        # column_will_be_profiled = self._column_should_be_profiled(column_name, included_columns, excluded_columns)
+        # if column_will_be_profiled:
+        profile_columns_result_column: ProfileColumnsResultColumn = table_result.create_column(column_name, column_type)
+        # return profile_columns_result_column, True
+        return profile_columns_result_column, True
 
     @staticmethod
     def build_frequent_values_dict(values: list[str | int | float], frequencies: list[int]) -> list[dict[str, int]]:
@@ -390,21 +391,21 @@ class ProfileColumnsRun:
         qualified_excluded_table_columns = _excluded_columns.get(table_name, [])
         qualified_excluded_table_columns.extend(excluded_all_tables)
 
-        return qualified_included_table_columns, qualified_excluded_table_columns
+        return set(qualified_included_table_columns), set(qualified_excluded_table_columns)
 
     def _build_column_expression_list(self, columns_expression: list[str]) -> dict[str, list[str]]:
-        included_columns = {}
+        selected_columns = {}
         for col_expression in columns_expression:
             table, column = col_expression.split(".")
             table = table.lower()
-            if table in included_columns.keys():
-                if included_columns[table] is None:
-                    included_columns[table] = [column]
+            if table in selected_columns.keys():
+                if selected_columns[table] is None:
+                    selected_columns[table] = [column]
                 else:
-                    included_columns[table].append(column)
+                    selected_columns[table].append(column)
             else:
-                included_columns.update({table: [column]})
-        return included_columns
+                selected_columns.update({table: [column]})
+        return selected_columns
 
     def _get_table_expression(self, columns_expression: list[str], is_for_exclusion: bool = False) -> list[str]:
         table_expressions = []

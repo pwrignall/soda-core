@@ -178,7 +178,9 @@ class DataSource:
         sql = f"SELECT * FROM {table_name.lower()}{limit_sql}"
         return sql
 
-    def sql_to_get_column_metadata_for_table(self, table_name: str) -> str:
+    def sql_to_get_column_metadata_for_table(
+        self, table_name: str, include_columns: list[str] | None, exclude_columns: list[str] | None
+    ) -> str:
         sql = (
             f"SELECT {', '.join(self.column_metadata_columns())} \n"
             f"FROM information_schema.columns \n"
@@ -188,6 +190,14 @@ class DataSource:
             sql += f" \n  AND lower({self.column_metadata_catalog_column()}) = '{self.database.lower()}'"
         if self.schema:
             sql += f" \n  AND lower(table_schema) = '{self.schema.lower()}'"
+
+        if include_columns:
+            for col in include_columns:
+                sql += f"\n AND lower(column_name) LIKE '{col}'"
+
+        if exclude_columns:
+            for col in exclude_columns:
+                sql += f"\n AND lower(column_name) NOT LIKE '{col}'"
 
         sql += f"\nORDER BY ORDINAL_POSITION"
 
