@@ -179,7 +179,10 @@ class DataSource:
         return sql
 
     def sql_to_get_column_metadata_for_table(
-        self, table_name: str, include_columns: list[str] | None, exclude_columns: list[str] | None
+        self,
+        table_name: str,
+        include_columns: list[str] | None = None,
+        exclude_columns: list[str] | None = None,
     ) -> str:
         sql = (
             f"SELECT {', '.join(self.column_metadata_columns())} \n"
