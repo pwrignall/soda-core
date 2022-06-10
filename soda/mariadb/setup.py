@@ -9,7 +9,7 @@ if sys.version_info < (3, 8):
     sys.exit(1)
 
 package_name = "soda-core-mariadb"
-package_version = "3.0.0b19"
+package_version = "3.0.0rc1"
 description = "Soda Core MariaDB Package"
 
 requires = [
