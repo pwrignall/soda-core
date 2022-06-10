@@ -23,7 +23,6 @@ class DataSourceImpl(DataSource):
                 password=connection_properties.get("password"),
                 database=connection_properties.get("database"),
                 port=connection_properties.get("port"),
-                connect_timeout=connection_properties.get("connect_timeout"),
             )
             return self.connection
 
