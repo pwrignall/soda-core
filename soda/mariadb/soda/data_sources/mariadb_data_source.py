@@ -1,5 +1,5 @@
 import logging
-# from typing import Dict, List, Optional
+from typing import Dict, List, Optional
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
@@ -13,6 +13,35 @@ logger = logging.getLogger(__name__)
 
 class DataSourceImpl(DataSource):
     TYPE = "mariadb"
+
+    SCHEMA_CHECK_TYPES_MAPPING: Dict = {
+        "TEXT": ["varchar", "text", "char"],
+        "NUMBER": ["integer", "int", "bigint", "mediumint", "smallint", "tinyint"],
+    }
+    SQL_TYPE_FOR_CREATE_TABLE_MAP: Dict = {
+        DataType.TEXT: "TEXT",
+        DataType.INTEGER: "INT",
+        DataType.DECIMAL: "DECIMAL",
+        DataType.DATE: "DATE",
+        DataType.TIME: "TIME",
+        DataType.TIMESTAMP: "TIMESTAMP_NTZ",
+        # DataType.TIMESTAMP_TZ: "TIMESTAMP_TZ",
+        DataType.BOOLEAN: "BOOLEAN",
+    }
+
+    SQL_TYPE_FOR_SCHEMA_CHECK_MAP = {
+        DataType.TEXT: "TEXT",
+        DataType.INTEGER: "INTEGER",
+        DataType.DECIMAL: "DECIMAL",
+        DataType.DATE: "DATE",
+        DataType.TIME: "TIME",
+        DataType.TIMESTAMP: "TIMESTAMP_NTZ",
+        # DataType.TIMESTAMP_TZ: "TIMESTAMP_TZ",
+        DataType.BOOLEAN: "BOOLEAN",
+    }
+
+    NUMERIC_TYPES_FOR_PROFILING = ["FLOAT", "DECIMAL", "INT"]
+    TEXT_TYPES_FOR_PROFILING = ["TEXT", "VARCHAR", "CHAR"]
 
     def connect(self, connection_properties):
         self.connection_properties = connection_properties
