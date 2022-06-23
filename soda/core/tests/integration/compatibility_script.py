@@ -4,6 +4,7 @@ Changes needed to make this work on MySQL
 =========================================
 Note: logged in with root - easiest way to get all the permissions.
 
+- Install mysql-connector-python and import mysql.connector 
 - No CASCADE on DROP SCHEMA calls.
 - Schemas in MySQL are synonymous with databases. They do not have the same meaning as in PostgreSQL.
 - No need to specify a database on connection as when we create the "schema" dev_tom this is a new db,
@@ -25,10 +26,10 @@ import mysql.connector
 
 def create_connection():
     return mysql.connector.connect(
-        user=os.getenv("POSTGRES_USERNAME", "root"),
-        password=os.getenv("POSTGRES_PASSWORD"),
-        host=os.getenv("POSTGRES_HOST", "localhost"),
-        port=os.getenv("POSTGRES_PORT", 3306),
+        user=os.getenv("MYSQL_USERNAME", "root"),
+        password=os.getenv("MYSQL_PASSWORD"),
+        host=os.getenv("MYSQL_HOST", "localhost"),
+        port=os.getenv("MYSQL_PORT", 3306),
     )
 
 
