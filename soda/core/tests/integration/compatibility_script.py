@@ -1,23 +1,42 @@
-import os
+"""
+=========================================
+Changes needed to make this work on MySQL
+=========================================
+Note: logged in with root - easiest way to get all the permissions.
 
-import psycopg2
+- No CASCADE on DROP SCHEMA calls.
+- Schemas in MySQL are synonymous with databases. They do not have the same meaning as in PostgreSQL.
+- No need to specify a database on connection as when we create the "schema" dev_tom this is a new db,
+and we work within that.
+- No data type in MySQL for a timestamp/datetime + timezone.
+- ~ operator is REGEXP in MySQL.
+- No PERCENTILE_DISC() function in MySQL. It is possible to mimic this with a CTA/subquery if needed.
+- No need to specify table_catalog when querying information_schema.
+- No obvious equivalent of pg_stat_user_tables in MySQL, from what I found.
+- Table names are case-sensitive so needed to change some of the references in the SQL executed.
+- No need to escape double quotes with a \.
+- Can't cast to VARCHAR, can to CHAR.
+
+"""
+
+import os
+import mysql.connector
 
 
 def create_connection():
-    return psycopg2.connect(
-        user=os.getenv("POSTGRES_USERNAME", "sodasql"),
+    return mysql.connector.connect(
+        user=os.getenv("POSTGRES_USERNAME", "root"),
         password=os.getenv("POSTGRES_PASSWORD"),
         host=os.getenv("POSTGRES_HOST", "localhost"),
-        port=os.getenv("POSTGRES_PORT"),
-        database=os.getenv("POSTGRES_DATABASE", "sodasql"),
+        port=os.getenv("POSTGRES_PORT", 3306),
     )
 
 
 connection = create_connection()
 
 
-def execute(sql: str):
-    cursor = connection.cursor()
+def execute(sql:str):
+    cursor = connection.cursor(buffered=True)
     try:
         print(f"Executing{sql}")
 
@@ -27,18 +46,20 @@ def execute(sql: str):
         cursor.close()
 
 
+
 execute(
     """
-        DROP SCHEMA IF EXISTS dev_tom CASCADE
+        DROP SCHEMA IF EXISTS dev_tom
     """
 )
 
 execute(
     """
-        CREATE SCHEMA IF NOT EXISTS dev_tom AUTHORIZATION CURRENT_USER
+        CREATE SCHEMA IF NOT EXISTS dev_tom
     """
 )
 
+# MySQL does not have a timestamp with tz data type.
 execute(
     """
         CREATE TABLE dev_tom.SODATEST_Customers_a0344266 (
@@ -52,8 +73,8 @@ execute(
              zip VARCHAR(255),
              email VARCHAR(255),
              date DATE,
-             ts TIMESTAMP,
-             ts_with_tz TIMESTAMPTZ
+             ts DATETIME,
+             ts_with_tz DATETIME
            )
     """
 )
@@ -107,7 +128,7 @@ execute(
           COUNT(*),
           COUNT(CASE WHEN cat = 'HIGH' THEN 1 END),
           COUNT(CASE WHEN pct IS NULL THEN 1 END),
-          COUNT(CASE WHEN NOT (pct IS NULL) AND NOT (pct ~ '^ *[-+]? *(\d+([\.,]\d+)?|([\.,]\d+)) *% *$') THEN 1 END),
+          COUNT(CASE WHEN NOT (pct IS NULL) AND NOT (pct REGEXP '^ *[-+]? *(\d+([\.,]\d+)?|([\.,]\d+)) *% *$') THEN 1 END),
           MIN(LENGTH(cat)),
           MAX(LENGTH(cat)),
           AVG(LENGTH(cat)),
@@ -117,7 +138,7 @@ execute(
           VARIANCE(size),
           VAR_POP(size),
           VAR_SAMP(size),
-          PERCENTILE_DISC(0.7) WITHIN GROUP (ORDER BY distance),
+        #   PERCENTILE_DISC(0.7) WITHIN GROUP (ORDER BY distance),
           MAX(ts)
         FROM dev_tom.SODATEST_Customers_a0344266
     """
@@ -137,7 +158,7 @@ execute(
     r"""
         SELECT *
         FROM dev_tom.SODATEST_Customers_a0344266
-        WHERE NOT pct IS NULL AND NOT pct ~ '^ *[-+]? *(\d+([\.,]\d+)?|([\.,]\d+)) *% *$'
+        WHERE NOT pct IS NULL AND NOT pct REGEXP '^ *[-+]? *(\d+([\.,]\d+)?|([\.,]\d+)) *% *$'
     """
 )
 
@@ -147,7 +168,6 @@ execute(
         SELECT column_name, data_type, is_nullable
         FROM information_schema.columns
         WHERE lower(table_name) = 'sodatest_customers_a0344266'
-          AND lower(table_catalog) = 'sodasql'
           AND lower(table_schema) = 'dev_tom'
         ORDER BY ORDINAL_POSITION
     """
@@ -164,14 +184,15 @@ execute(
 )
 
 # discover-tables-find-tables-and-row-counts
-execute(
-    """
-        SELECT relname, n_live_tup
-        FROM pg_stat_user_tables
-        WHERE (lower(relname) like 'sodatest_customers_a0344266')
-              AND lower(schemaname) = 'dev_tom'
-    """
-)
+# Not sure this exists in MySQL
+# execute(
+#     """
+#         SELECT relname, n_live_tup
+#         FROM pg_stat_user_tables
+#         WHERE (lower(relname) like 'sodatest_customers_a0344266')
+#               AND lower(schemaname) = 'dev_tom'
+#     """
+# )
 
 # discover-tables-column-metadata-for-sodatest_customers_a0344266
 execute(
@@ -179,7 +200,6 @@ execute(
         SELECT column_name, data_type, is_nullable
         FROM information_schema.columns
         WHERE lower(table_name) = 'sodatest_customers_a0344266'
-          AND lower(table_catalog) = 'sodasql'
           AND lower(table_schema) = 'dev_tom'
         ORDER BY ORDINAL_POSITION
     """
@@ -202,7 +222,7 @@ execute(
           COUNT(*),
           COUNT(CASE WHEN cat = 'HIGH' THEN 1 END),
           COUNT(CASE WHEN pct IS NULL THEN 1 END),
-          COUNT(CASE WHEN NOT (pct IS NULL) AND NOT (pct ~ '^ *[-+]? *(\d+([\.,]\d+)?|([\.,]\d+)) *% *$') THEN 1 END),
+          COUNT(CASE WHEN NOT (pct IS NULL) AND NOT (pct REGEXP '^ *[-+]? *(\d+([\.,]\d+)?|([\.,]\d+)) *% *$') THEN 1 END),
           MIN(LENGTH(cat)),
           MAX(LENGTH(cat)),
           AVG(LENGTH(cat)),
@@ -212,7 +232,7 @@ execute(
           VARIANCE(size),
           VAR_POP(size),
           VAR_SAMP(size),
-          PERCENTILE_DISC(0.7) WITHIN GROUP (ORDER BY distance),
+        #   PERCENTILE_DISC(0.7) WITHIN GROUP (ORDER BY distance),
           MAX(ts)
         FROM dev_tom.SODATEST_Customers_a0344266
     """
@@ -232,16 +252,17 @@ execute(
     r"""
         SELECT *
         FROM dev_tom.SODATEST_Customers_a0344266
-        WHERE NOT pct IS NULL AND NOT pct ~ '^ *[-+]? *(\d+([\.,]\d+)?|([\.,]\d+)) *% *$'
+        WHERE NOT pct IS NULL AND NOT pct REGEXP '^ *[-+]? *(\d+([\.,]\d+)?|([\.,]\d+)) *% *$'
     """
 )
 
 # sodatest_customers_a0344266.aggregation[0]
+# Table name is case-sensitive
 execute(
     """
         SELECT
           COUNT(*)
-        FROM dev_tom.sodatest_customers_a0344266
+        FROM dev_tom.SODATEST_Customers_a0344266
     """
 )
 
@@ -251,7 +272,6 @@ execute(
         SELECT column_name, data_type, is_nullable
         FROM information_schema.columns
         WHERE lower(table_name) = 'sodatest_customers_a0344266'
-          AND lower(table_catalog) = 'sodasql'
           AND lower(table_schema) = 'dev_tom'
         ORDER BY ORDINAL_POSITION
     """
@@ -274,7 +294,7 @@ execute(
           COUNT(*),
           COUNT(CASE WHEN cat = 'HIGH' THEN 1 END),
           COUNT(CASE WHEN pct IS NULL THEN 1 END),
-          COUNT(CASE WHEN NOT (pct IS NULL) AND NOT (pct ~ '^ *[-+]? *(\d+([\.,]\d+)?|([\.,]\d+)) *% *$') THEN 1 END),
+          COUNT(CASE WHEN NOT (pct IS NULL) AND NOT (pct REGEXP '^ *[-+]? *(\d+([\.,]\d+)?|([\.,]\d+)) *% *$') THEN 1 END),
           MIN(LENGTH(cat)),
           MAX(LENGTH(cat)),
           AVG(LENGTH(cat)),
@@ -284,7 +304,7 @@ execute(
           VARIANCE(size),
           VAR_POP(size),
           VAR_SAMP(size),
-          PERCENTILE_DISC(0.7) WITHIN GROUP (ORDER BY distance),
+        #   PERCENTILE_DISC(0.7) WITHIN GROUP (ORDER BY distance),
           MAX(ts)
         FROM dev_tom.SODATEST_Customers_a0344266
     """
@@ -304,7 +324,7 @@ execute(
     r"""
         SELECT *
         FROM dev_tom.SODATEST_Customers_a0344266
-        WHERE NOT pct IS NULL AND NOT pct ~ '^ *[-+]? *(\d+([\.,]\d+)?|([\.,]\d+)) *% *$'
+        WHERE NOT pct IS NULL AND NOT pct REGEXP '^ *[-+]? *(\d+([\.,]\d+)?|([\.,]\d+)) *% *$'
     """
 )
 
@@ -313,7 +333,7 @@ execute(
     """
         SELECT
           COUNT(*)
-        FROM dev_tom.sodatest_customers_a0344266
+        FROM dev_tom.SODATEST_Customers_a0344266
     """
 )
 
@@ -323,7 +343,6 @@ execute(
         SELECT column_name, data_type, is_nullable
         FROM information_schema.columns
         WHERE lower(table_name) = 'sodatest_customers_a0344266'
-          AND lower(table_catalog) = 'sodasql'
           AND lower(table_schema) = 'dev_tom'
         ORDER BY ORDINAL_POSITION
     """
@@ -345,21 +364,20 @@ execute(
         SELECT column_name, data_type, is_nullable
         FROM information_schema.columns
         WHERE lower(table_name) = 'sodatest_customers_a0344266'
-          AND lower(table_catalog) = 'sodasql'
           AND lower(table_schema) = 'dev_tom'
         ORDER BY ORDINAL_POSITION
     """
 )
 
 # profile-columns-get-tables-and-row-counts
-execute(
-    """
-        SELECT relname, n_live_tup
-        FROM pg_stat_user_tables
-        WHERE (lower(relname) like 'sodatest_customers_a0344266' OR lower(relname) like 'sodatest_customers_a0344266')
-              AND lower(schemaname) = 'dev_tom'
-    """
-)
+# execute(
+#     """
+#         SELECT relname, n_live_tup
+#         FROM pg_stat_user_tables
+#         WHERE (lower(relname) like 'sodatest_customers_a0344266' OR lower(relname) like 'sodatest_customers_a0344266')
+#               AND lower(schemaname) = 'dev_tom'
+#     """
+# )
 
 # profile-columns-get-column-metadata-for-sodatest_customers_a0344266
 execute(
@@ -367,7 +385,6 @@ execute(
         SELECT column_name, data_type, is_nullable
         FROM information_schema.columns
         WHERE lower(table_name) = 'sodatest_customers_a0344266'
-          AND lower(table_catalog) = 'sodasql'
           AND lower(table_schema) = 'dev_tom'
           AND (lower(column_name) LIKE lower('sizeTxt') OR lower(column_name) LIKE lower('size'))
         ORDER BY ORDINAL_POSITION
@@ -379,27 +396,27 @@ execute(
     """
         WITH
             value_frequencies AS (
-                SELECT \"size\" AS value_, count(*) AS frequency_
-                FROM dev_tom.sodatest_customers_a0344266
-                WHERE \"size\" IS NOT NULL
-                GROUP BY \"size\"
+                SELECT "size" AS value_, count(*) AS frequency_
+                FROM dev_tom.SODATEST_Customers_a0344266
+                WHERE "size" IS NOT NULL
+                GROUP BY "size"
             ),
             mins AS (
-                SELECT CAST('mins' AS VARCHAR) AS metric_, ROW_NUMBER() OVER(ORDER BY value_ ASC) AS index_, value_, frequency_
+                SELECT CAST('mins' AS CHAR) AS metric_, ROW_NUMBER() OVER(ORDER BY value_ ASC) AS index_, value_, frequency_
                 FROM value_frequencies
                 WHERE value_ IS NOT NULL
                 ORDER BY value_ ASC
                 LIMIT 5
             ),
             maxs AS (
-                SELECT CAST('maxs' AS VARCHAR) AS metric_, ROW_NUMBER() OVER(ORDER BY value_ DESC) AS index_, value_, frequency_
+                SELECT CAST('maxs' AS CHAR) AS metric_, ROW_NUMBER() OVER(ORDER BY value_ DESC) AS index_, value_, frequency_
                 FROM value_frequencies
                 WHERE value_ IS NOT NULL
                 ORDER BY value_ DESC
                 LIMIT 5
             ),
             frequent_values AS (
-                SELECT CAST('frequent_values' AS VARCHAR) AS metric_, ROW_NUMBER() OVER(ORDER BY frequency_ DESC) AS index_, value_, frequency_
+                SELECT CAST('frequent_values' AS CHAR) AS metric_, ROW_NUMBER() OVER(ORDER BY frequency_ DESC) AS index_, value_, frequency_
                 FROM value_frequencies
                 ORDER BY frequency_ desc
                 LIMIT 10
@@ -421,13 +438,13 @@ execute(
 execute(
     """
         SELECT
-            avg(\"size\") as average
-            , sum(\"size\") as sum
-            , variance(\"size\") as variance
-            , stddev(\"size\") as standard_deviation
-            , count(distinct(\"size\")) as distinct_values
-            , sum(case when \"size\" is null then 1 else 0 end) as missing_values
-        FROM dev_tom.sodatest_customers_a0344266
+            avg("size") as average
+            , sum("size") as sum
+            , variance("size") as variance
+            , stddev("size") as standard_deviation
+            , count(distinct("size")) as distinct_values
+            , sum(case when "size" is null then 1 else 0 end) as missing_values
+        FROM dev_tom.SODATEST_Customers_a0344266
     """
 )
 
@@ -436,10 +453,10 @@ execute(
     """
         WITH
                        value_frequencies AS (
-                                   SELECT \"size\" AS value_, count(*) AS frequency_
-                                   FROM dev_tom.sodatest_customers_a0344266
-                                   WHERE \"size\" IS NOT NULL
-                                   GROUP BY \"size\"
+                                   SELECT "size" AS value_, count(*) AS frequency_
+                                   FROM dev_tom.SODATEST_Customers_a0344266
+                                   WHERE "size" IS NOT NULL
+                                   GROUP BY "size"
                                )
                    SELECT SUM(CASE WHEN value_ < -2.55 THEN frequency_ END),
         SUM(CASE WHEN -2.55 <= value_ AND value_ < -2.1 THEN frequency_ END),
@@ -470,13 +487,13 @@ execute(
     """
         WITH
             value_frequencies AS (
-                SELECT \"sizetxt\" AS value_, count(*) AS frequency_
-                FROM dev_tom.sodatest_customers_a0344266
-                WHERE \"sizetxt\" IS NOT NULL
-                GROUP BY \"sizetxt\"
+                SELECT "sizetxt" AS value_, count(*) AS frequency_
+                FROM dev_tom.SODATEST_Customers_a0344266
+                WHERE "sizetxt" IS NOT NULL
+                GROUP BY "sizetxt"
             ),
             frequent_values AS (
-                SELECT CAST('frequent_values' AS VARCHAR) AS metric_, ROW_NUMBER() OVER(ORDER BY frequency_ DESC) AS index_, value_, frequency_
+                SELECT CAST('frequent_values' AS CHAR) AS metric_, ROW_NUMBER() OVER(ORDER BY frequency_ DESC) AS index_, value_, frequency_
                 FROM value_frequencies
                 ORDER BY frequency_ desc
                 LIMIT 10
@@ -491,17 +508,17 @@ execute(
 execute(
     """
         SELECT
-            count(distinct(\"sizetxt\")) as distinct_values
-            , sum(case when \"sizetxt\" is null then 1 else 0 end) as missing_values
-            , avg(length(\"sizetxt\")) as avg_length
-            , min(length(\"sizetxt\")) as min_length
-            , max(length(\"sizetxt\")) as max_length
-        FROM dev_tom.sodatest_customers_a0344266
+            count(distinct("sizetxt")) as distinct_values
+            , sum(case when "sizetxt" is null then 1 else 0 end) as missing_values
+            , avg(length("sizetxt")) as avg_length
+            , min(length("sizetxt")) as min_length
+            , max(length("sizetxt")) as max_length
+        FROM dev_tom.SODATEST_Customers_a0344266
     """
 )
 
 execute(
     """
-        DROP SCHEMA IF EXISTS dev_tom CASCADE
+        DROP SCHEMA IF EXISTS dev_tom
     """
 )
