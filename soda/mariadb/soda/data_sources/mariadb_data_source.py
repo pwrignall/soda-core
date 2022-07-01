@@ -43,12 +43,19 @@ class MariadbDataSource(DataSource):
     NUMERIC_TYPES_FOR_PROFILING = ["FLOAT", "DECIMAL", "INT"]
     TEXT_TYPES_FOR_PROFILING = ["TEXT", "VARCHAR", "CHAR"]
 
+        def __init__(self, logs: Logs, data_source_name: str, data_source_properties: dict):
+        super().__init__(logs, data_source_name, data_source_properties)
+        self.user = data_source_properties.get("username")
+        self.password = data_source_properties.get("password")
+        self.database = data_source_properties.get("database")
+        self.host = data_source_properties.get("host")
+        self.port = data_source_properties.get("port")
+
     def connect(self):
         self.connection = mariadb.connect(
-                host=connection_properties.get("host"),
-                user=connection_properties.get("username"),
-                password=connection_properties.get("password"),
-                database=connection_properties.get("database"),
-                port=connection_properties.get("port"),
-                )
-
+            user=self.user,
+            password=self.password,
+            database=self.database,
+            host=self.host,
+            port=self.port,
+        )
