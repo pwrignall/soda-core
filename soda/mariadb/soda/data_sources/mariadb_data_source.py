@@ -7,6 +7,7 @@ import mariadb
 from soda.common.exceptions import DataSourceConnectionError
 from soda.execution.data_source import DataSource
 from soda.execution.data_type import DataType
+from soda.common.logs import Logs
 
 logger = logging.getLogger(__name__)
 
