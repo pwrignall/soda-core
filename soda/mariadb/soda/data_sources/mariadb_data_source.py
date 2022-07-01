@@ -43,17 +43,14 @@ class MariadbDataSource(DataSource):
     NUMERIC_TYPES_FOR_PROFILING = ["FLOAT", "DECIMAL", "INT"]
     TEXT_TYPES_FOR_PROFILING = ["TEXT", "VARCHAR", "CHAR"]
 
-    def connect(self, connection_properties):
-        self.connection_properties = connection_properties
-        try:
-            self.connection = mariadb.connect(
+    def connect(self):
+        self.connection = mariadb.connect(
                 host=connection_properties.get("host"),
                 user=connection_properties.get("username"),
                 password=connection_properties.get("password"),
                 database=connection_properties.get("database"),
                 port=connection_properties.get("port"),
-            )
-            return self.connection
+                )
 
         except Exception as e:
             raise DataSourceConnectionError(self.TYPE, e)
