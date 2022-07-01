@@ -53,6 +53,7 @@ class UserDefinedFailedRowsExpressionCheck(Check):
                 data_source_scan=self.data_source_scan,
                 check_name=self.check_cfg.source_line,
                 sql=failed_rows_sql,
+                samples_limit=self.check_cfg.samples_limit,
             )
             failed_rows_query.execute()
             if failed_rows_query.sample_ref and failed_rows_query.sample_ref.is_persisted():
@@ -61,7 +62,7 @@ class UserDefinedFailedRowsExpressionCheck(Check):
     def get_failed_rows_sql(self) -> str:
         sql = (
             f"SELECT * \n"
-            f"FROM {self.partition.table.fully_qualified_table_name} \n"
+            f"FROM {self.partition.table.qualified_table_name} \n"
             f"WHERE ({self.check_cfg.fail_condition_sql_expr})"
         )
         partition_filter = self.partition.sql_partition_filter

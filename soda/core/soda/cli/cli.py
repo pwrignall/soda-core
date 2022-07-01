@@ -14,9 +14,9 @@ from typing import List, Optional, Tuple
 
 import click
 from ruamel.yaml import YAML
+from ruamel.yaml.main import round_trip_dump
 from soda.common.file_system import file_system
 from soda.common.logs import configure_logging
-from soda.common.yaml_helper import to_yaml_str
 from soda.scan import Scan
 from soda.telemetry.soda_telemetry import SodaTelemetry
 from soda.telemetry.soda_tracer import soda_trace, span_setup_function_args
@@ -26,6 +26,7 @@ from ..__version__ import SODA_CORE_VERSION
 soda_telemetry = SodaTelemetry.get_instance()
 
 
+@click.version_option(package_name="soda-core", prog_name="soda-core")
 @click.group(help=f"Soda Core CLI version {SODA_CORE_VERSION}")
 def main():
     pass
@@ -46,7 +47,7 @@ if __name__ == "__main__":
     required=False,
     multiple=False,
     type=click.STRING,
-    default="test",
+    default="Soda Core CLI",
 )
 @click.option("-v", "--variable", required=False, default=None, multiple=True, type=click.STRING)
 @click.option(
@@ -90,7 +91,7 @@ def scan(
 
     option -s --scan-definition is used By Soda Cloud (only if configured) to correlate subsequent scans and
     show check history over time. Scans normally happen as part of a schedule. It's optional. The default
-    is "test", which is usually sufficient when testing the CLI and Soda Cloud connection.
+    is "Soda Core CLI", which is usually sufficient when testing the CLI and Soda Cloud connection.
 
     option -V --verbose activates more verbose logging, including the queries that are executed.
 
@@ -162,7 +163,7 @@ def scan(
 
 
 @main.command(
-    short_help="updates a distribution reference file",
+    short_help="updates a DRO in the distribution reference file",
 )
 @click.option("-d", "--data-source", envvar="SODA_DATA_SOURCE", required=True, multiple=False, type=click.STRING)
 @click.option(
@@ -172,16 +173,24 @@ def scan(
     multiple=False,
     type=click.STRING,
 )
+@click.option(
+    "-n",
+    "--name",
+    required=False,
+    multiple=False,
+    type=click.STRING,
+)
 @click.option("-V", "--verbose", is_flag=True)
 @click.argument("distribution_reference_file", type=click.STRING)
-def update(
+def update_dro(
     distribution_reference_file: str,
     data_source: str,
     configuration: str,
+    name: Optional[str],
     verbose: Optional[bool],
 ):
     """
-    soda update will
+    soda update-dro will
       * Read the configuration and instantiate a connection to the data source
       * Read the definition properties in the distribution reference file
       * Update bins, labels and/or weights under key "reference distribution" in the distribution reference file
@@ -191,13 +200,14 @@ def update(
     option -c --configuration is the configuration file containing the data source definitions.  The default
     is ~/.soda/configuration.yml is used.
 
+
     option -V --verbose activates more verbose logging, including the queries that are executed.
 
     [DISTRIBUTION_REFERENCE_FILE] is a distribution reference file
 
     Example:
 
-    soda update -d snowflake_customer_data ./customers_size_distribution_reference.yml
+    soda update-dro -d snowflake_customer_data ./customers_size_distribution_reference.yml
     """
 
     configure_logging()
@@ -212,14 +222,50 @@ def update(
 
     yaml = YAML()
     try:
-        distribution_dict = yaml.load(distribution_reference_yaml_str)
+        distribution_reference_dict = yaml.load(distribution_reference_yaml_str)
     except BaseException as e:
         logging.error(f"Could not parse distribution reference file {distribution_reference_file}: {e}")
         return
 
-    table_name = distribution_dict.get("table")
-    if not table_name:
-        logging.error(f"Missing key 'table' in distribution reference file {distribution_reference_file}")
+    named_format = all(isinstance(value, dict) for value in distribution_reference_dict.values())
+    unnamed_format = not any(
+        isinstance(value, dict) and key != "distribution_reference"
+        for key, value in distribution_reference_dict.items()
+    )
+    correct_format = named_format or unnamed_format
+    if not correct_format:
+        logging.error(
+            f"""Incorrect distribution reference file format in "{distribution_reference_file}". If you want to use multiple DROs in a single distribution"""
+            f""" reference file please make sure that they are all named. For more info see the documentation"""
+            f""" \nhttps://docs.soda.io/soda-cl/distribution.html#generate-a-distribution-reference-object-dro."""
+        )
+        return
+
+    if name and named_format:
+        distribution_dict = distribution_reference_dict.get(name)
+        if not distribution_dict:
+            logging.error(
+                f"""The dro name "{name}" that you provided does not exist in your distribution reference file "{distribution_reference_file}". """
+                f"""For more information see the documentation:\nhttps://docs.soda.io/soda-cl/distribution.html#generate-a-distribution-reference-object-dro."""
+            )
+            return
+    elif named_format:
+        logging.error(
+            f"""The distribution reference file "{distribution_reference_file}" that you used contains named DROs, but you did not provide"""
+            f""" a DRO name with the -n argument. Please run soda update with -n "dro_name" to indicate which DRO you want to update."""
+            f""" For more info see the documentation:\nhttps://docs.soda.io/soda-cl/distribution.html#generate-a-distribution-reference-object-dro."""
+        )
+        return
+    else:
+        distribution_dict = distribution_reference_dict
+
+    dataset_name = distribution_dict.get("dataset")
+    if not dataset_name:
+        dataset_name = distribution_dict.pop("table")
+        distribution_dict["dataset"] = dataset_name
+
+    if not dataset_name:
+        logging.error(f"Missing key 'dataset' in distribution reference file {distribution_reference_file}")
 
     column_name = distribution_dict.get("column")
     if not column_name:
@@ -234,27 +280,31 @@ def update(
     if filter is not None:
         filter_clause = f"WHERE {filter}"
 
-    if table_name and column_name and distribution_type:
-        query = f"SELECT {column_name} FROM {table_name} {filter_clause}"
+    if dataset_name and column_name and distribution_type:
+        query = f"SELECT {column_name} FROM {dataset_name} {filter_clause}"
         logging.info(f"Querying column values to build distribution reference:\n{query}")
 
         scan = Scan()
         scan.add_configuration_yaml_files(configuration)
         data_source_scan = scan._get_or_create_data_source_scan(data_source_name=data_source)
-        rows = __execute_query(data_source_scan.data_source.connection, query)
+        if data_source_scan:
+            rows = __execute_query(data_source_scan.data_source.connection, query)
 
-        # TODO document what the supported data types are per data source type. And ensure proper Python data type conversion if needed
-        column_values = [row[0] for row in rows]
+            # TODO document what the supported data types are per data source type. And ensure proper Python data type conversion if needed
+            column_values = [row[0] for row in rows]
 
-        from soda.scientific.distribution.comparison import RefDataCfg
-        from soda.scientific.distribution.generate_dro import DROGenerator
+            from soda.scientific.distribution.comparison import RefDataCfg
+            from soda.scientific.distribution.generate_dro import DROGenerator
 
-        dro = DROGenerator(RefDataCfg(distribution_type=distribution_type), column_values).generate()
-        distribution_dict["distribution reference"] = dro.dict()
+            dro = DROGenerator(RefDataCfg(distribution_type=distribution_type), column_values).generate()
+            distribution_dict["distribution_reference"] = dro.dict()
+            if "distribution reference" in distribution_dict:
+                # To clean up the file and don't leave the old syntax
+                distribution_dict.pop("distribution reference")
 
-        new_file_content = to_yaml_str(distribution_dict)
+            new_file_content = round_trip_dump(distribution_reference_dict)
 
-        fs.file_write_from_str(path=distribution_reference_file, file_content_str=new_file_content)
+            fs.file_write_from_str(path=distribution_reference_file, file_content_str=new_file_content)
 
 
 def __execute_query(connection, sql: str) -> List[Tuple]:

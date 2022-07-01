@@ -16,7 +16,7 @@ from soda.execution.data_source_scan import DataSourceScan
 from soda.execution.derived_metric import DerivedMetric
 from soda.execution.metric import Metric
 from soda.profiling.discover_table_result_table import DiscoverTablesResultTable
-from soda.profiling.profile_columns_result_table import ProfileColumnsResultTable
+from soda.profiling.profile_columns_result import ProfileColumnsResultTable
 from soda.profiling.sample_tables_result import SampleTablesResultTable
 from soda.sampler.default_sampler import DefaultSampler
 from soda.soda_cloud.historic_descriptor import HistoricDescriptor
@@ -58,7 +58,6 @@ class Scan:
         self._discover_tables_result_tables: list[DiscoverTablesResultTable] = []
         self._sample_tables_result_tables: list[SampleTablesResultTable] = []
         self._logs.info(f"Soda Core {SODA_CORE_VERSION}")
-        self._is_profiling_run = False
 
     def set_data_source_name(self, data_source_name: str):
         """
@@ -309,10 +308,6 @@ class Scan:
                         "scan.set_scan_definition_name(...) is not set and it is required to make the Soda Cloud integration work.  For this scan, Soda Cloud will be disabled."
                     )
                     self._configuration.soda_cloud = None
-                    from soda.sampler.soda_cloud_sampler import SodaCloudSampler
-
-                    if isinstance(self._configuration.sampler, SodaCloudSampler):
-                        self._configuration.sampler = DefaultSampler()
                 else:
                     if self._configuration.soda_cloud.is_samples_disabled():
                         self._configuration.sampler = DefaultSampler()
@@ -323,7 +318,7 @@ class Scan:
                 self._configuration.sampler.logs = self._logs
 
             # Resolve the for each table checks and add them to the scan_cfg data structures
-            self.__resolve_for_each_table_checks()
+            self.__resolve_for_each_dataset_checks()
             # Resolve the for each column checks and add them to the scan_cfg data structures
             self.__resolve_for_each_column_checks()
 
@@ -373,9 +368,11 @@ class Scan:
                 if isinstance(metric, DerivedMetric):
                     metric.compute_derived_metric_values()
 
-            # Extend automated checks into checks
-            automated_monitoring_checks = self.run_automated_monitoring()
-            self._checks.extend(automated_monitoring_checks)
+            # Run profiling, data samples, automated monitoring, sample tables
+            try:
+                self.run_data_source_scan()
+            except Exception as e:
+                self._logs.error(f"""An error occurred while executing data source scan""", exception=e)
 
             # Evaluates the checks based on all the metric values
             for check in self._checks:
@@ -409,10 +406,6 @@ class Scan:
                         f"Metrics {missing_metrics_str} were not computed for check {check.check_cfg.source_line}"
                     )
 
-            self.run_discover_tables()
-            self.run_profile_columns()
-            self.run_sample_tables()
-
             self._logs.info("Scan summary:")
             self.__log_queries(having_exception=False)
             self.__log_queries(having_exception=True)
@@ -427,7 +420,7 @@ class Scan:
             self.__log_checks(None)
             checks_not_evaluated = len(self._checks) - checks_pass_count - checks_warn_count - checks_fail_count
 
-            if len(self._checks) == 0 and not self._is_profiling_run:
+            if len(self._checks) == 0:
                 self._logs.warning("No checks found, 0 checks evaluated.")
             if checks_not_evaluated:
                 self._logs.info(f"{checks_not_evaluated} checks not evaluated.")
@@ -485,76 +478,18 @@ class Scan:
             self._close()
         return exit_value
 
-    def run_automated_monitoring(self):
-        # this is where automated monitoring is called
-        _automated_checks = []
+    def run_data_source_scan(self):
         for data_source_scan in self._data_source_scans:
-            for monitoring_cfg in data_source_scan.data_source_scan_cfg.monitoring_cfgs:
+            for data_source_cfg in data_source_scan.data_source_scan_cfg.data_source_cfgs:
                 data_source_name = data_source_scan.data_source_scan_cfg.data_source_name
                 data_source_scan = self._get_or_create_data_source_scan(data_source_name)
                 if data_source_scan:
-                    monitor_runner = data_source_scan.create_automated_monitor_run(monitoring_cfg, self)
-                    automated_monitoring_checks: list[Check] = monitor_runner.run()
-                    if automated_monitoring_checks:
-                        _automated_checks += automated_monitoring_checks
+                    data_source_scan.run(data_source_cfg, self)
                 else:
                     data_source_names = ", ".join(self._data_source_manager.data_source_properties_by_name.keys())
                     self._logs.error(
                         f"Could not run monitors on data_source {data_source_name} because It is not "
                         f"configured: {data_source_names}"
-                    )
-        return _automated_checks
-
-    def run_profile_columns(self):
-        for data_source_scan in self._data_source_scans:
-            for profile_columns_cfg in data_source_scan.data_source_scan_cfg.profile_columns_cfgs:
-                data_source_name = data_source_scan.data_source_scan_cfg.data_source_name
-                data_source_scan = self._get_or_create_data_source_scan(data_source_name)
-                if data_source_scan:
-                    profile_columns_run = data_source_scan.create_profile_columns_run(profile_columns_cfg, self)
-                    profile_columns_result = profile_columns_run.run()
-                    self._is_profiling_run = True
-                    self._profile_columns_result_tables.extend(profile_columns_result.tables)
-                else:
-                    data_source_names = ", ".join(self._data_source_manager.data_source_properties_by_name.keys())
-                    self._logs.error(
-                        f"Could not profile columns on data_source {data_source_name} because it is not "
-                        f"configured: {data_source_names}",
-                        location=profile_columns_cfg.location,
-                    )
-
-    def run_discover_tables(self):
-        for data_source_scan in self._data_source_scans:
-            for discover_columns_cfg in data_source_scan.data_source_scan_cfg.discover_tables_cfgs:
-                data_source_name = data_source_scan.data_source_scan_cfg.data_source_name
-                data_source_scan = self._get_or_create_data_source_scan(data_source_name)
-                if data_source_scan:
-                    discover_tables_run = data_source_scan.create_discover_tables_run(discover_columns_cfg, self)
-                    discover_tables_result = discover_tables_run.run()
-                    self._is_profiling_run = True
-                    self._discover_tables_result_tables.extend(discover_tables_result.tables)
-                else:
-                    data_source_names = ", ".join(self._data_source_manager.data_source_properties_by_name.keys())
-                    self._logs.error(
-                        f"Could not discover tables on data_source {data_source_name} because it is not configured: {data_source_names}",
-                        location=discover_columns_cfg.location,
-                    )
-
-    def run_sample_tables(self):
-        for data_source_scan in self._data_source_scans:
-            for sample_tables_cfg in data_source_scan.data_source_scan_cfg.sample_tables_cfgs:
-                data_source_name = data_source_scan.data_source_scan_cfg.data_source_name
-                data_source_scan = self._get_or_create_data_source_scan(data_source_name)
-                if data_source_scan:
-                    sample_tables_run = data_source_scan.create_sample_tables_run(sample_tables_cfg)
-                    sample_tables_result = sample_tables_run.run()
-                    self._is_profiling_run = True
-                    self._sample_tables_result_tables.extend(sample_tables_result.tables)
-                else:
-                    data_source_names = ", ".join(self._data_source_manager.data_source_properties_by_name.keys())
-                    self._logs.error(
-                        f"Could not discover tables on data_source {data_source_name} because it is not configured: {data_source_names}",
-                        location=sample_tables_cfg.location,
                     )
 
     def __checks_to_text(self, checks: list[Check]):
@@ -574,18 +509,16 @@ class Scan:
         )
         self._checks.append(check)
 
-    def __resolve_for_each_table_checks(self):
-        pass
-
+    def __resolve_for_each_dataset_checks(self):
         data_source_name = self._data_source_name
 
-        for index, for_each_table_cfg in enumerate(self._sodacl_cfg.for_each_table_cfgs):
-            include_tables = [include.table_name_filter for include in for_each_table_cfg.includes]
-            exclude_tables = [include.table_name_filter for include in for_each_table_cfg.excludes]
+        for index, for_each_dataset_cfg in enumerate(self._sodacl_cfg.for_each_dataset_cfgs):
+            include_tables = [include.table_name_filter for include in for_each_dataset_cfg.includes]
+            exclude_tables = [include.table_name_filter for include in for_each_dataset_cfg.excludes]
 
             data_source_scan = self._get_or_create_data_source_scan(data_source_name)
             if data_source_scan:
-                query_name = f"for_each_table_{for_each_table_cfg.table_alias_name}[{index}]"
+                query_name = f"for_each_dataset_{for_each_dataset_cfg.table_alias_name}[{index}]"
                 table_names = data_source_scan.data_source.get_table_names(
                     include_tables=include_tables, exclude_tables=exclude_tables, query_name=query_name
                 )
@@ -596,9 +529,9 @@ class Scan:
                     data_source_scan_cfg = self._sodacl_cfg.get_or_create_data_source_scan_cfgs(data_source_name)
                     table_cfg = data_source_scan_cfg.get_or_create_table_cfg(table_name)
                     partition_cfg = table_cfg.find_partition(None, None)
-                    for check_cfg_template in for_each_table_cfg.check_cfgs:
-                        check_cfg = check_cfg_template.instantiate_for_each_table(
-                            table_alias=for_each_table_cfg.table_alias_name,
+                    for check_cfg_template in for_each_dataset_cfg.check_cfgs:
+                        check_cfg = check_cfg_template.instantiate_for_each_dataset(
+                            table_alias=for_each_dataset_cfg.table_alias_name,
                             table_name=table_name,
                             partition_name=partition_cfg.partition_name,
                         )
@@ -634,8 +567,7 @@ class Scan:
             if data_source:
                 data_source_scan = data_source.create_data_source_scan(self, data_source_scan_cfg)
                 self._data_source_scans.append(data_source_scan)
-            else:
-                self._sodacl_cfg.data_source_scan_cfgs.pop(data_source_name)
+
         return data_source_scan
 
     def _jinja_resolve(

@@ -7,22 +7,23 @@ from tests.helpers.common_test_tables import (
     customers_test_table,
     orders_test_table,
 )
-from tests.helpers.scanner import Scanner
+from tests.helpers.data_source_fixture import DataSourceFixture
 
 
-def test_discover_tables(scanner: Scanner):
-    table_name = scanner.ensure_test_table(customers_profiling)
+def test_discover_tables(data_source_fixture: DataSourceFixture):
+    table_name = data_source_fixture.ensure_test_table(customers_profiling)
 
-    scan = scanner.create_test_scan()
+    scan = data_source_fixture.create_test_scan()
     mock_soda_cloud = scan.enable_mock_soda_cloud()
     scan.add_sodacl_yaml_str(
         f"""
-          discover tables:
-            tables:
+          discover datasets:
+            datasets:
                 - include {table_name}
+                - include hello
         """
     )
-    scan.execute()
+    scan.execute(allow_warnings_only=True)
     # remove the data source name because it's a pain to test
     discover_tables_result = mock_soda_cloud.pop_scan_result()
 
@@ -31,7 +32,7 @@ def test_discover_tables(scanner: Scanner):
     actual_metadata = actual_metadatas[0]
     actual_schema = actual_metadata["schema"]
 
-    data_source = scanner.data_source
+    data_source = data_source_fixture.data_source
     to_ds_type = data_source.get_sql_type_for_schema_check
     to_ds_case = data_source.default_casify_column_name
 
@@ -53,44 +54,50 @@ def test_discover_tables(scanner: Scanner):
     assert actual_schema == expected_schema
 
 
-def test_discover_tables_customer_wildcard(scanner: Scanner):
-    scanner.ensure_test_table(customers_test_table)
-    scanner.ensure_test_table(orders_test_table)
-    scanner.ensure_test_table(customers_profiling)
-    scanner.ensure_test_table(customers_dist_check_test_table)
+def test_discover_tables_customer_wildcard(data_source_fixture: DataSourceFixture):
+    data_source_fixture.ensure_test_table(orders_test_table)
+    profiling_table = data_source_fixture.ensure_test_table(customers_profiling)
+    dist_check_test_table = data_source_fixture.ensure_test_table(customers_dist_check_test_table)
 
-    scan = scanner.create_test_scan()
+    test_table = data_source_fixture.ensure_test_table(customers_test_table)
+    test_table = data_source_fixture.data_source.default_casify_table_name(test_table)
+    wildcard = f"%{test_table.split('_')[1]}%"
+
+    scan = data_source_fixture.create_test_scan()
     mock_soda_cloud = scan.enable_mock_soda_cloud()
     scan.add_sodacl_yaml_str(
         f"""
-        discover tables:
-          tables:
-            - include %customers%
+        discover datasets:
+          datasets:
+            - include {wildcard}
         """
     )
-    scan.execute()
+    scan.execute(allow_warnings_only=True)
     discover_tables_result = mock_soda_cloud.pop_scan_result()
     assert discover_tables_result is not None
-    assert len(discover_tables_result["metadata"]) == 3
+    # we only expect tables with customer in the relation name
+
+    expected_datasets = {x.lower() for x in [profiling_table, dist_check_test_table, test_table]}
+    actual_datasets = {t.get("table").lower() for t in discover_tables_result["metadata"]}
+    assert expected_datasets.issubset(actual_datasets)
 
 
-def test_discover_tables_customer_wildcard(scanner: Scanner):
-    scanner.ensure_test_table(customers_test_table)
-    scanner.ensure_test_table(orders_test_table)
-    scanner.ensure_test_table(customers_profiling)
-    scanner.ensure_test_table(customers_dist_check_test_table)
-
-    scan = scanner.create_test_scan()
+def test_discover_table_with_quotes_warning(data_source_fixture: DataSourceFixture):
+    orders_table = data_source_fixture.ensure_test_table(orders_test_table)
+    scan = data_source_fixture.create_test_scan()
     mock_soda_cloud = scan.enable_mock_soda_cloud()
     scan.add_sodacl_yaml_str(
         f"""
-        discover tables:
-          tables:
-            - include sodatest_cust%
-            - exclude sodatest_customersdist_%
+        discover datasets:
+            datasets:
+                - include "{orders_table}"
+                - exclude "{orders_table}"
         """
     )
-    scan.execute()
-    discover_tables_result = mock_soda_cloud.pop_scan_result()
-    assert discover_tables_result is not None
-    assert len(discover_tables_result["metadata"]) == 2
+    scan.execute(allow_warnings_only=True)
+    scan_results = mock_soda_cloud.pop_scan_result()
+    character_log_warnings = [
+        x for x in scan_results["logs"] if "It looks like quote characters are present" in x["message"]
+    ]
+
+    assert len(character_log_warnings) == 2

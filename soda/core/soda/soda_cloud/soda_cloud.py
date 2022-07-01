@@ -47,12 +47,14 @@ class SodaCloud:
     @staticmethod
     def build_scan_results(scan) -> dict:
         checks = [
-            check.get_cloud_dict() for check in scan._checks if check.outcome is not None and check.archetype is None
-        ]
-        autoamted_monitoring_checks = [
             check.get_cloud_dict()
             for check in scan._checks
-            if check.outcome is not None and check.archetype is not None
+            if (check.outcome is not None or check.force_send_results_to_cloud == True) and check.archetype is None
+        ]
+        automated_monitoring_checks = [
+            check.get_cloud_dict()
+            for check in scan._checks
+            if (check.outcome is not None or check.force_send_results_to_cloud == True) and check.archetype is not None
         ]
 
         # TODO: [SODA-608] separate profile columns and sample tables by aligning with the backend team
@@ -76,7 +78,7 @@ class SodaCloud:
                 "checks": checks,
                 # TODO Queries are not supported by Soda Cloud yet.
                 # "queries": [query.get_cloud_dict() for query in scan._queries],
-                "automatedMonitoringChecks": autoamted_monitoring_checks,
+                "automatedMonitoringChecks": automated_monitoring_checks,
                 "profiling": profiling,
                 "metadata": [
                     discover_tables_result.get_cloud_dict()
@@ -92,7 +94,9 @@ class SodaCloud:
             return value
         return str(value)
 
-    def upload_sample(self, scan: Scan, sample_rows: tuple[tuple], sample_file_name: str) -> str:
+    def upload_sample(
+        self, scan: Scan, sample_rows: tuple[tuple], sample_file_name: str, samples_limit: int | None = 100
+    ) -> str:
         """
         :param sample_file_name: file name without extension
         :return: Soda Cloud file_id
@@ -104,11 +108,11 @@ class SodaCloud:
             scan_folder_name = (
                 f"{self._fileify(scan_definition_name)}"
                 f'_{scan_data_timestamp.strftime("%Y%m%d%H%M%S")}'
-                f'_{datetime.now().strftime("%Y%m%d%H%M%S")}'
+                f'_{datetime.utcnow().strftime("%Y%m%d%H%M%S")}'
             )
 
             with tempfile.TemporaryFile() as temp_file:
-                for row in sample_rows:
+                for row in sample_rows[0:samples_limit]:
                     row = [self._serialize_file_upload_value(v) for v in row]
                     rows_json_str = json.dumps(row)
                     rows_json_bytes = bytearray(rows_json_str, "utf-8")
@@ -197,7 +201,8 @@ class SodaCloud:
         )
 
     def _get_historic_measurements(self, hd: HistoricMeasurementsDescriptor):
-        return self._execute_query(
+
+        historic_measurements = self._execute_query(
             {
                 "type": "sodaCoreHistoricMeasurements",
                 "limit": hd.limit,
@@ -213,6 +218,11 @@ class SodaCloud:
                 },
             }
         )
+        # Filter out historic_measurements not having 'value' key
+        historic_measurements["results"] = [
+            measurement for measurement in historic_measurements["results"] if "value" in measurement
+        ]
+        return historic_measurements
 
     def _get_hisotric_check_results(self, hd: HistoricCheckResultsDescriptor):
         return self._execute_query(

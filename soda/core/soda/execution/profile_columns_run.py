@@ -4,10 +4,12 @@ from numbers import Number
 from typing import TYPE_CHECKING, overload
 
 from soda.execution.query import Query
-from soda.profiling.profile_columns_result import ProfileColumnsResult
-from soda.profiling.profile_columns_result_column import ProfileColumnsResultColumn
-from soda.profiling.profile_columns_result_table import ProfileColumnsResultTable
-from soda.sodacl.profile_columns_cfg import ProfileColumnsCfg
+from soda.profiling.profile_columns_result import (
+    ProfileColumnsResult,
+    ProfileColumnsResultColumn,
+    ProfileColumnsResultTable,
+)
+from soda.sodacl.data_source_check_cfg import ProfileColumnsCfg
 
 if TYPE_CHECKING:
     from soda.execution.data_source_scan import DataSourceScan
@@ -49,20 +51,26 @@ class ProfileColumnsRun:
         self.logs.info(f"Running column profiling for data source: {self.data_source.data_source_name}")
 
         # row_counts is a dict that maps table names to row counts.
-        row_counts_by_table_name: dict[str, int] = self.data_source.get_row_counts_all_tables(
+        table_names: dict[str, int] = self.data_source.get_table_names(
             include_tables=self._get_table_expression(self.profile_columns_cfg.include_columns),
             exclude_tables=self._get_table_expression(self.profile_columns_cfg.exclude_columns, is_for_exclusion=True),
-            query_name="profile-columns-get-tables-and-row-counts",
+            query_name="profile-columns-get-table-names",
         )
+        if len(table_names) < 1:
+            self.logs.warning(
+                f"No table matching your SodaCL inclusion list found on your {self.data_source.data_source_name} "
+                "data source. Profiling results may be incomplete or entirely skipped"
+            )
+            return profile_columns_result
         parsed_included_tables_and_columns = self._build_column_expression_list(
             self.profile_columns_cfg.include_columns
         )
         parsed_excluded_tables_and_columns = self._build_column_expression_list(
             self.profile_columns_cfg.exclude_columns
         )
-        for table_name in row_counts_by_table_name:
+        for table_name in table_names:
             self.logs.debug(f"Profiling columns for {table_name}")
-            measured_row_count = row_counts_by_table_name[table_name]
+            measured_row_count = self.data_source.get_table_row_count(table_name)
             profile_columns_result_table = profile_columns_result.create_table(
                 table_name, self.data_source.data_source_name, measured_row_count
             )
@@ -94,7 +102,8 @@ class ProfileColumnsRun:
                         )
                     except Exception as e:
                         self.logs.error(
-                            f"Problem profiling numeric column {table_name}.{column_name}: {e}", exception=e
+                            f"Problem profiling numeric column {table_name}.{column_name}: {e}",
+                            exception=e,
                         )
 
                 # text columns
@@ -112,10 +121,13 @@ class ProfileColumnsRun:
                             profile_columns_result_table,
                         )
                     except Exception as e:
-                        self.logs.error(f"Problem profiling text column {table_name}.{column_name}: {e}", exception=e)
+                        self.logs.error(
+                            f"Problem profiling text column {table_name}.{column_name}: {e}",
+                            exception=e,
+                        )
 
-        if not profile_columns_result.tables:
-            self.logs.error(f"Profiling for data source: {self.data_source.data_source_name} failed")
+            else:
+                self.logs.warning(f"No columns matching your SodaCL inclusion patterns were found on {table_name}.")
         return profile_columns_result
 
     def profile_numeric_column(
@@ -211,6 +223,8 @@ class ProfileColumnsRun:
                     column_name,
                     profile_columns_result_column.min,
                     profile_columns_result_column.max,
+                    profile_columns_result_column.distinct_values,
+                    column_type,
                 )
                 if histogram_sql is not None:
                     histogram_query = Query(
@@ -383,27 +397,17 @@ class ProfileColumnsRun:
                 selected_columns.update({table: [column]})
         return selected_columns
 
-    def _get_table_expression(self, columns_expression: list[str]) -> list[str]:
-        table_expressions = []
-        for column_expression in columns_expression:
-            parts = column_expression.split(".")
-            if len(parts) != 2:
-                self.logs.error(
-                    f'Invalid include column expression "{column_expression}"',
-                    location=self.profile_columns_cfg.location,
-                )
-            else:
-                table_expression = parts[0]
-                table_expressions.append(table_expression)
-        return table_expressions
-
     def _get_table_expression(self, columns_expression: list[str], is_for_exclusion: bool = False) -> list[str]:
         table_expressions = []
+        if is_for_exclusion:
+            operation_word = "exclude"
+        else:
+            operation_word = "include"
         for column_expression in columns_expression:
             parts = column_expression.split(".")
             if len(parts) != 2:
                 self.logs.error(
-                    f'Invalid include column expression "{column_expression}"',
+                    f'Invalid {operation_word} column expression "{column_expression}"',
                     location=self.profile_columns_cfg.location,
                 )
             else:

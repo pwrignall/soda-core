@@ -17,12 +17,13 @@ class SampleContext:
     column: Optional["Column"]
     scan: "Scan"
     logs: "Logs"
+    samples_limit: Optional[int]
 
     def get_scan_folder_name(self):
         parts = [
             self.scan._scan_definition_name,
             self.scan._data_timestamp.strftime("%Y%m%d%H%M%S"),
-            datetime.now().strftime("%Y%m%d%H%M%S"),
+            datetime.utcnow().strftime("%Y%m%d%H%M%S"),
         ]
         return "_".join([part for part in parts if part])
 
