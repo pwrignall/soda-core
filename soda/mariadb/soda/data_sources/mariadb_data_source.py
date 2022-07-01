@@ -11,7 +11,7 @@ from soda.execution.data_type import DataType
 logger = logging.getLogger(__name__)
 
 
-class DataSourceImpl(DataSource):
+class MariadbDataSource(DataSource):
     TYPE = "mariadb"
 
     SCHEMA_CHECK_TYPES_MAPPING: Dict = {
