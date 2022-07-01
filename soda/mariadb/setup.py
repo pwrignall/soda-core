@@ -13,7 +13,6 @@ package_version = "3.0.0rc1"
 description = "Soda Core MariaDB Package"
 
 requires = [
-    f"soda-core=={package_version}",
     "mariadb"
 ]
 # TODO Fix the params
